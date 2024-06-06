@@ -24,6 +24,8 @@ from ultralytics.utils import (
     yaml_load,
 )
 
+from torch import nn
+import torch.autograd.profiler as profiler
 
 class Model(nn.Module):
     """
@@ -429,28 +431,29 @@ class Model(nn.Module):
         Raises:
             AttributeError: If the predictor is not properly set up.
         """
-        if source is None:
-            source = ASSETS
-            LOGGER.warning(f"WARNING ⚠️ 'source' is missing. Using 'source={source}'.")
-
-        is_cli = (ARGV[0].endswith("yolo") or ARGV[0].endswith("ultralytics")) and any(
-            x in ARGV for x in ("predict", "track", "mode=predict", "mode=track")
-        )
-
-        custom = {"conf": 0.25, "batch": 1, "save": is_cli, "mode": "predict"}  # method defaults
-        args = {**self.overrides, **custom, **kwargs}  # highest priority args on the right
-        prompts = args.pop("prompts", None)  # for SAM-type models
-
-        if not self.predictor:
-            self.predictor = predictor or self._smart_load("predictor")(overrides=args, _callbacks=self.callbacks)
-            self.predictor.setup_model(model=self.model, verbose=is_cli)
-        else:  # only update args if predictor is already setup
-            self.predictor.args = get_cfg(self.predictor.args, args)
-            if "project" in args or "name" in args:
-                self.predictor.save_dir = get_save_dir(self.predictor.args)
-        if prompts and hasattr(self.predictor, "set_prompts"):  # for SAM-type models
-            self.predictor.set_prompts(prompts)
-        return self.predictor.predict_cli(source=source) if is_cli else self.predictor(source=source, stream=stream)
+        with profiler.record_function("MODEL INFERENCE"):
+            if source is None:
+                source = ASSETS
+                LOGGER.warning(f"WARNING ⚠️ 'source' is missing. Using 'source={source}'.")
+    
+            is_cli = (ARGV[0].endswith("yolo") or ARGV[0].endswith("ultralytics")) and any(
+                x in ARGV for x in ("predict", "track", "mode=predict", "mode=track")
+            )
+    
+            custom = {"conf": 0.25, "batch": 1, "save": is_cli, "mode": "predict"}  # method defaults
+            args = {**self.overrides, **custom, **kwargs}  # highest priority args on the right
+            prompts = args.pop("prompts", None)  # for SAM-type models
+    
+            if not self.predictor:
+                self.predictor = predictor or self._smart_load("predictor")(overrides=args, _callbacks=self.callbacks)
+                self.predictor.setup_model(model=self.model, verbose=is_cli)
+            else:  # only update args if predictor is already setup
+                self.predictor.args = get_cfg(self.predictor.args, args)
+                if "project" in args or "name" in args:
+                    self.predictor.save_dir = get_save_dir(self.predictor.args)
+            if prompts and hasattr(self.predictor, "set_prompts"):  # for SAM-type models
+                self.predictor.set_prompts(prompts)
+            return self.predictor.predict_cli(source=source) if is_cli else self.predictor(source=source, stream=stream)
 
     def track(
         self,
